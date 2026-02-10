@@ -1,0 +1,2512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stardew Valley Style - Grassy Plains</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: #2d2d2d;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+        }
+        
+        #gameContainer {
+            text-align: center;
+        }
+        
+        canvas {
+            border: 4px solid #5a3a2a;
+            background: #87ceeb;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+            -ms-interpolation-mode: nearest-neighbor;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
+        }
+        
+        #hud {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: #fff;
+            font-size: 14px;
+            text-shadow: 2px 2px 0px #000;
+            background: rgba(74, 50, 32, 0.9);
+            padding: 10px 14px;
+            border-radius: 8px;
+            border: 3px solid #d4a574;
+            font-weight: bold;
+        }
+        
+        #controls {
+            margin-top: 15px;
+            color: #f4e4d4;
+            background: linear-gradient(135deg, #5a3a2a, #4a2f20);
+            padding: 14px 24px;
+            border-radius: 8px;
+            display: inline-block;
+            border: 3px solid #8b6f47;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+        }
+        
+        #controls h3 {
+            color: #ffe4a0;
+            margin-bottom: 10px;
+            font-size: 17px;
+            text-shadow: 2px 2px 0px #5a3a2a;
+        }
+        
+        #controls p {
+            margin: 5px 0;
+            font-size: 13px;
+        }
+        
+        .key {
+            display: inline-block;
+            background: linear-gradient(135deg, #ffe4a0, #ffd570);
+            color: #3a2010;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            margin: 0 3px;
+            font-size: 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            border: 2px solid #d4a574;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer" style="position: relative;">
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        <div id="hud">
+            <div>🌻 Grassy Plains</div>
+            <div>📍 X: <span id="posX">0</span> Y: <span id="posY">0</span></div>
+        </div>
+        <div id="controls">
+            <h3>🌾 STARDEW CONTROLS</h3>
+            <p><span class="key">WASD</span> or <span class="key">Arrows</span> to Move Around</p>
+            <p><span class="key">E</span> to Talk | <span class="key">T</span> Enter/Exit House | <span class="key">1-3</span> Choose Answer | <span class="key">ESC</span> Exit Chat</p>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        const TILE_SIZE = 16; // Stardew Valley tile size
+        const WORLD_WIDTH = 80;
+        const WORLD_HEIGHT = 60;
+        
+        const game = {
+            width: canvas.width,
+            height: canvas.height,
+            camera: { x: 0, y: 0 },
+            time: 0,
+            dayTime: 0
+        };
+        
+        const keys = {
+            up: false,
+            down: false,
+            left: false,
+            right: false
+        };
+        
+        // Dialogue system
+        const dialogue = {
+            active: false,
+            npc: null,
+            currentNode: null,
+            nearbyNPC: null
+        };
+        
+        // House system
+        const houseSystem = {
+            insideHouse: false,
+            currentHouse: null,
+            nearbyDoor: null
+        };
+        
+        // ============================================================================
+        // STARDEW VALLEY STYLE TILES
+        // ============================================================================
+        
+        const Tile = {
+            GRASS: 0,
+            DIRT_PATH: 1,
+            FLOWER_RED: 2,
+            FLOWER_BLUE: 3,
+            FLOWER_YELLOW: 4,
+            TREE: 5,
+            ROCK: 6,
+            TALL_GRASS: 7,
+            WATER: 8
+        };
+        
+        // ============================================================================
+        // WORLD GENERATION - GRASSY PLAINS
+        // ============================================================================
+        
+        class GrassyPlainsWorld {
+            constructor() {
+                this.tiles = [];
+                this.decorations = [];
+                this.trees = [];
+                this.rocks = [];
+                this.houses = [];
+                this.npcs = [];
+                this.generate();
+            }
+            
+            generate() {
+                console.log('🌾 Generating Grassy Plains...');
+                
+                // Fill with grass
+                for (let y = 0; y < WORLD_HEIGHT; y++) {
+                    this.tiles[y] = [];
+                    for (let x = 0; x < WORLD_WIDTH; x++) {
+                        this.tiles[y][x] = Tile.GRASS;
+                    }
+                }
+                
+                // Add dirt paths (winding)
+                this.generatePaths();
+                
+                // Scatter flowers
+                this.generateFlowers();
+                
+                // Add tall grass patches
+                this.generateTallGrass();
+                
+                // Add houses FIRST
+                this.generateHouses();
+                
+                // Small pond SECOND  
+                this.generatePond();
+                
+                // Place rocks
+                this.generateRocks();
+                
+                // Generate trees LAST (after houses and pond so we can avoid them)
+                this.generateTrees();
+                
+                // Add NPCs
+                this.generateNPCs();
+                
+                console.log('✅ Grassy Plains ready!');
+            }
+            
+            generatePaths() {
+                // Winding dirt path
+                let x = 10;
+                let y = WORLD_HEIGHT / 2;
+                
+                for (let i = 0; i < 60; i++) {
+                    // Draw path
+                    for (let py = -1; py <= 1; py++) {
+                        for (let px = -1; px <= 1; px++) {
+                            const nx = x + px;
+                            const ny = y + py;
+                            if (nx >= 0 && nx < WORLD_WIDTH && ny >= 0 && ny < WORLD_HEIGHT) {
+                                if (Math.random() > 0.2) {
+                                    this.tiles[ny][nx] = Tile.DIRT_PATH;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Random walk
+                    x += Math.floor(Math.random() * 3) - 1;
+                    y += Math.floor(Math.random() * 3) - 1;
+                    
+                    x = Math.max(5, Math.min(WORLD_WIDTH - 5, x));
+                    y = Math.max(5, Math.min(WORLD_HEIGHT - 5, y));
+                }
+            }
+            
+            generateFlowers() {
+                for (let i = 0; i < 150; i++) {
+                    const x = Math.floor(Math.random() * WORLD_WIDTH);
+                    const y = Math.floor(Math.random() * WORLD_HEIGHT);
+                    
+                    if (this.tiles[y][x] === Tile.GRASS) {
+                        const flowerType = [Tile.FLOWER_RED, Tile.FLOWER_BLUE, Tile.FLOWER_YELLOW][Math.floor(Math.random() * 3)];
+                        this.decorations.push({ x, y, type: flowerType });
+                    }
+                }
+            }
+            
+            generateTallGrass() {
+                for (let i = 0; i < 200; i++) {
+                    const x = Math.floor(Math.random() * WORLD_WIDTH);
+                    const y = Math.floor(Math.random() * WORLD_HEIGHT);
+                    
+                    if (this.tiles[y][x] === Tile.GRASS) {
+                        this.decorations.push({ x, y, type: Tile.TALL_GRASS });
+                    }
+                }
+            }
+            
+            generateTrees() {
+                for (let i = 0; i < 25; i++) {
+                    const x = 5 + Math.floor(Math.random() * (WORLD_WIDTH - 10));
+                    const y = 5 + Math.floor(Math.random() * (WORLD_HEIGHT - 10));
+                    
+                    // Check if area is clear of water
+                    let canPlace = true;
+                    for (let dy = -1; dy <= 1; dy++) {
+                        for (let dx = -1; dx <= 1; dx++) {
+                            const checkY = y + dy;
+                            const checkX = x + dx;
+                            if (checkY >= 0 && checkY < WORLD_HEIGHT && checkX >= 0 && checkX < WORLD_WIDTH) {
+                                if (this.tiles[checkY][checkX] !== Tile.GRASS) {
+                                    canPlace = false;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Check if too close to houses
+                    if (canPlace) {
+                        for (let house of this.houses) {
+                            const distX = Math.abs(x - (house.x + house.width / 2));
+                            const distY = Math.abs(y - (house.y + house.height / 2));
+                            if (distX < 8 && distY < 8) {
+                                canPlace = false;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if (canPlace) {
+                        this.trees.push({ 
+                            x, 
+                            y,
+                            variant: Math.floor(Math.random() * 3) // Tree variety
+                        });
+                    }
+                }
+            }
+            
+            generateRocks() {
+                for (let i = 0; i < 15; i++) {
+                    const x = Math.floor(Math.random() * WORLD_WIDTH);
+                    const y = Math.floor(Math.random() * WORLD_HEIGHT);
+                    
+                    if (this.tiles[y][x] === Tile.GRASS) {
+                        this.rocks.push({
+                            x,
+                            y,
+                            size: 1 + Math.floor(Math.random() * 2)
+                        });
+                    }
+                }
+            }
+            
+            generateHouses() {
+                this.houses = [];
+                
+                // House 1 - Cozy cottage (Emma's house)
+                this.houses.push({
+                    x: 20,
+                    y: 15,
+                    width: 6,
+                    height: 5,
+                    type: 'cottage',
+                    owner: 'Emma',
+                    doorX: 23,
+                    doorY: 19,
+                    interior: {
+                        furniture: [
+                            { type: 'bed', x: 1, y: 1 },
+                            { type: 'table', x: 4, y: 2 },
+                            { type: 'chair', x: 4, y: 3 },
+                            { type: 'bookshelf', x: 1, y: 4 },
+                            { type: 'rug', x: 3, y: 3 }
+                        ]
+                    }
+                });
+                
+                // House 2 - Farmhouse (Marcus's house)
+                this.houses.push({
+                    x: 50,
+                    y: 35,
+                    width: 7,
+                    height: 6,
+                    type: 'farmhouse',
+                    owner: 'Marcus',
+                    doorX: 53,
+                    doorY: 40,
+                    interior: {
+                        furniture: [
+                            { type: 'bed', x: 1, y: 1 },
+                            { type: 'table', x: 5, y: 3 },
+                            { type: 'chair', x: 4, y: 3 },
+                            { type: 'chair', x: 5, y: 4 },
+                            { type: 'stove', x: 1, y: 4 },
+                            { type: 'counter', x: 2, y: 4 }
+                        ]
+                    }
+                });
+                
+                // House 3 - Small cabin (Sofia's house)
+                this.houses.push({
+                    x: 65,
+                    y: 12,
+                    width: 5,
+                    height: 4,
+                    type: 'cabin',
+                    owner: 'Sofia',
+                    doorX: 67,
+                    doorY: 15,
+                    interior: {
+                        furniture: [
+                            { type: 'bed', x: 1, y: 1 },
+                            { type: 'easel', x: 3, y: 1 },
+                            { type: 'table', x: 1, y: 3 },
+                            { type: 'plant', x: 4, y: 3 }
+                        ]
+                    }
+                });
+            }
+            
+            generateNPCs() {
+                // NPC 1 - Woman with blonde hair and pink dress
+                this.npcs.push({
+                    name: 'Emma',
+                    x: 25 * TILE_SIZE,
+                    y: 20 * TILE_SIZE,
+                    hairColor: '#f4d03f',
+                    shirtColor: '#ff69b4',
+                    pantsColor: '#9b59b6',
+                    skinColor: '#ffcc99',
+                    direction: 'down',
+                    walkTimer: 0,
+                    walkPattern: 'wander',
+                    dialogueTree: {
+                        greeting: {
+                            text: "Hi there! I love this beautiful weather we're having!",
+                            options: [
+                                { text: "It's perfect for a walk!", next: "walk_talk" },
+                                { text: "I prefer rainy days.", next: "rain_talk" },
+                                { text: "How are you today?", next: "how_are_you" }
+                            ]
+                        },
+                        walk_talk: {
+                            text: "I know right! I could walk around here all day!",
+                            options: [
+                                { text: "Do you come here often?", next: "often" },
+                                { text: "Goodbye!", next: "end" }
+                            ]
+                        },
+                        rain_talk: {
+                            text: "Really? I suppose rainy days have their charm too.",
+                            options: [
+                                { text: "Yeah, the sound is calming.", next: "end_positive" },
+                                { text: "Never mind, goodbye.", next: "end" }
+                            ]
+                        },
+                        how_are_you: {
+                            text: "I'm doing wonderful, thanks for asking!",
+                            options: [
+                                { text: "That's great to hear!", next: "end_positive" },
+                                { text: "Goodbye!", next: "end" }
+                            ]
+                        },
+                        often: {
+                            text: "Every single day! This is my favorite spot in the whole area.",
+                            options: [
+                                { text: "I can see why!", next: "end_positive" },
+                                { text: "Goodbye!", next: "end" }
+                            ]
+                        },
+                        end_positive: {
+                            text: "Well, enjoy your day! Come chat again anytime!",
+                            options: []
+                        },
+                        end: {
+                            text: "See you around!",
+                            options: []
+                        }
+                    }
+                });
+                
+                // NPC 2 - Man with red hair and blue shirt
+                this.npcs.push({
+                    name: 'Marcus',
+                    x: 55 * TILE_SIZE,
+                    y: 38 * TILE_SIZE,
+                    hairColor: '#c0392b',
+                    shirtColor: '#3498db',
+                    pantsColor: '#2c3e50',
+                    skinColor: '#f4c6a0',
+                    direction: 'right',
+                    walkTimer: 0,
+                    walkPattern: 'wander',
+                    dialogueTree: {
+                        greeting: {
+                            text: "Hey! You must be new around here.",
+                            options: [
+                                { text: "Yes, just exploring.", next: "exploring" },
+                                { text: "Actually, I've been here a while.", next: "regular" },
+                                { text: "Who are you?", next: "who" }
+                            ]
+                        },
+                        exploring: {
+                            text: "Cool! There's lots to see. Have you checked out the pond yet?",
+                            options: [
+                                { text: "Yes, it's beautiful!", next: "pond_yes" },
+                                { text: "Not yet, where is it?", next: "pond_no" }
+                            ]
+                        },
+                        regular: {
+                            text: "Oh really? I haven't seen you around much. I'm here all the time!",
+                            options: [
+                                { text: "I prefer quiet times.", next: "end_positive" },
+                                { text: "Goodbye!", next: "end" }
+                            ]
+                        },
+                        who: {
+                            text: "I'm Marcus! I basically live out here. Love the fresh air.",
+                            options: [
+                                { text: "Nice to meet you!", next: "end_positive" },
+                                { text: "Cool, see you around.", next: "end" }
+                            ]
+                        },
+                        pond_yes: {
+                            text: "Right? I love fishing there on quiet mornings.",
+                            options: [
+                                { text: "Maybe I'll see you there!", next: "end_positive" },
+                                { text: "Goodbye!", next: "end" }
+                            ]
+                        },
+                        pond_no: {
+                            text: "Head east from here, you can't miss it. It's super peaceful!",
+                            options: [
+                                { text: "Thanks for the tip!", next: "end_positive" },
+                                { text: "Goodbye!", next: "end" }
+                            ]
+                        },
+                        end_positive: {
+                            text: "Catch you later! Enjoy your day!",
+                            options: []
+                        },
+                        end: {
+                            text: "Later!",
+                            options: []
+                        }
+                    }
+                });
+                
+                // NPC 3 - Woman with black hair and purple shirt
+                this.npcs.push({
+                    name: 'Sofia',
+                    x: 68 * TILE_SIZE,
+                    y: 15 * TILE_SIZE,
+                    hairColor: '#2c3e50',
+                    shirtColor: '#9b59b6',
+                    pantsColor: '#34495e',
+                    skinColor: '#d4a574',
+                    direction: 'left',
+                    walkTimer: 0,
+                    walkPattern: 'wander',
+                    dialogueTree: {
+                        greeting: {
+                            text: "Oh, hello there. Enjoying the scenery?",
+                            options: [
+                                { text: "Yes, it's amazing!", next: "scenery_yes" },
+                                { text: "It's okay, I guess.", next: "scenery_meh" },
+                                { text: "What brings you here?", next: "you_here" }
+                            ]
+                        },
+                        scenery_yes: {
+                            text: "I'm glad you think so! I come here to find inspiration.",
+                            options: [
+                                { text: "Inspiration for what?", next: "inspiration" },
+                                { text: "That's nice. Goodbye!", next: "end" }
+                            ]
+                        },
+                        scenery_meh: {
+                            text: "Well, beauty is in the eye of the beholder I suppose.",
+                            options: [
+                                { text: "Sorry, I didn't mean it like that.", next: "sorry" },
+                                { text: "Goodbye.", next: "end" }
+                            ]
+                        },
+                        you_here: {
+                            text: "I'm an artist. I come here to sketch and paint the landscapes.",
+                            options: [
+                                { text: "That sounds wonderful!", next: "inspiration" },
+                                { text: "Interesting. Goodbye!", next: "end" }
+                            ]
+                        },
+                        inspiration: {
+                            text: "Thank you! The trees, the flowers, the light... it's all perfect.",
+                            options: [
+                                { text: "I'd love to see your work sometime.", next: "end_positive" },
+                                { text: "Keep creating! Goodbye!", next: "end" }
+                            ]
+                        },
+                        sorry: {
+                            text: "No worries! Everyone has their own taste.",
+                            options: [
+                                { text: "Thanks for understanding.", next: "end_positive" },
+                                { text: "Goodbye!", next: "end" }
+                            ]
+                        },
+                        end_positive: {
+                            text: "Thank you! Take care, and enjoy your time here!",
+                            options: []
+                        },
+                        end: {
+                            text: "Farewell.",
+                            options: []
+                        }
+                    }
+                });
+            }
+            
+            updateNPCs() {
+                this.npcs.forEach(npc => {
+                    // Initialize home timer
+                    if (npc.homeTimer === undefined) npc.homeTimer = 0;
+                    npc.homeTimer++;
+                    
+                    // Go home every 60 seconds (3600 frames at 60fps)
+                    if (npc.homeTimer > 3600) {
+                        npc.homeTimer = 0;
+                        npc.goingHome = true;
+                        
+                        // Find their house
+                        const house = this.houses.find(h => h.owner === npc.name);
+                        if (house) {
+                            npc.targetHouse = house;
+                        }
+                    }
+                    
+                    // If going home, head to house door
+                    if (npc.goingHome && npc.targetHouse) {
+                        const doorX = npc.targetHouse.doorX * TILE_SIZE;
+                        const doorY = npc.targetHouse.doorY * TILE_SIZE;
+                        const dist = Math.sqrt(
+                            Math.pow(npc.x - doorX, 2) + 
+                            Math.pow(npc.y - doorY, 2)
+                        );
+                        
+                        if (dist < 10) {
+                            // Reached home - stay inside for 10 seconds
+                            npc.insideHouse = true;
+                            npc.goingHome = false;
+                            npc.stayInsideTimer = 600; // 10 seconds
+                            return;
+                        }
+                        
+                        // Move toward door
+                        const speed = 1.5;
+                        const dx = doorX - npc.x;
+                        const dy = doorY - npc.y;
+                        const angle = Math.atan2(dy, dx);
+                        
+                        const oldX = npc.x;
+                        const oldY = npc.y;
+                        
+                        npc.x += Math.cos(angle) * speed;
+                        npc.y += Math.sin(angle) * speed;
+                        
+                        // Check collision while going home
+                        if (this.checkCollision(npc.x, npc.y, 16, 16)) {
+                            npc.x = oldX;
+                            npc.y = oldY;
+                            // Try to go around obstacle
+                            npc.x += Math.cos(angle + Math.PI / 4) * speed;
+                            npc.y += Math.sin(angle + Math.PI / 4) * speed;
+                        }
+                        
+                        // Set direction based on movement
+                        if (Math.abs(dx) > Math.abs(dy)) {
+                            npc.direction = dx > 0 ? 'right' : 'left';
+                        } else {
+                            npc.direction = dy > 0 ? 'down' : 'up';
+                        }
+                        
+                        // Animation
+                        npc.frameTimer = (npc.frameTimer || 0) + 1;
+                        if (npc.frameTimer > 10) {
+                            npc.frameTimer = 0;
+                            npc.walkFrame = ((npc.walkFrame || 0) + 1) % 4;
+                        }
+                        return;
+                    }
+                    
+                    // If inside house
+                    if (npc.insideHouse) {
+                        npc.stayInsideTimer--;
+                        if (npc.stayInsideTimer <= 0) {
+                            npc.insideHouse = false;
+                            npc.targetHouse = null;
+                        }
+                        return;
+                    }
+                    
+                    npc.walkTimer++;
+                    
+                    // Initialize paused state
+                    if (npc.paused === undefined) npc.paused = false;
+                    if (npc.pauseTimer === undefined) npc.pauseTimer = 0;
+                    
+                    // Handle pausing before direction change
+                    if (npc.paused) {
+                        npc.pauseTimer++;
+                        if (npc.pauseTimer > 30) {
+                            npc.paused = false;
+                            npc.pauseTimer = 0;
+                            
+                            const dirs = ['up', 'down', 'left', 'right'];
+                            npc.direction = dirs[Math.floor(Math.random() * dirs.length)];
+                        }
+                        return;
+                    }
+                    
+                    // Walking animation
+                    npc.frameTimer = (npc.frameTimer || 0) + 1;
+                    if (npc.frameTimer > 10) {
+                        npc.frameTimer = 0;
+                        npc.walkFrame = ((npc.walkFrame || 0) + 1) % 4;
+                    }
+                    
+                    // Check if it's time to change direction
+                    if (npc.walkTimer > 60 + Math.random() * 60) {
+                        npc.walkTimer = 0;
+                        npc.paused = true;
+                        npc.pauseTimer = 0;
+                        return;
+                    }
+                    
+                    // Move continuously
+                    const speed = 1.2;
+                    let dx = 0;
+                    let dy = 0;
+                    
+                    if (npc.direction === 'up') dy = -speed;
+                    if (npc.direction === 'down') dy = speed;
+                    if (npc.direction === 'left') dx = -speed;
+                    if (npc.direction === 'right') dx = speed;
+                    
+                    // Store old position
+                    const oldX = npc.x;
+                    const oldY = npc.y;
+                    
+                    npc.x += dx;
+                    npc.y += dy;
+                    
+                    // Check collision with trees and houses
+                    if (this.checkCollision(npc.x, npc.y, 16, 16)) {
+                        npc.x = oldX;
+                        npc.y = oldY;
+                        // Change direction if hit something
+                        npc.paused = true;
+                        npc.pauseTimer = 0;
+                    }
+                    
+                    // Keep in bounds
+                    npc.x = Math.max(0, Math.min(WORLD_WIDTH * TILE_SIZE - 16, npc.x));
+                    npc.y = Math.max(0, Math.min(WORLD_HEIGHT * TILE_SIZE - 16, npc.y));
+                });
+            }
+            
+            checkCollision(x, y, width, height) {
+                // Check tree collisions (trunk area)
+                for (let tree of this.trees) {
+                    const treeX = tree.x * TILE_SIZE - 8;
+                    const treeY = tree.y * TILE_SIZE - 8;
+                    const treeWidth = 32;
+                    const treeHeight = 24;
+                    
+                    if (x < treeX + treeWidth &&
+                        x + width > treeX &&
+                        y < treeY + treeHeight &&
+                        y + height > treeY) {
+                        return true;
+                    }
+                }
+                
+                // Check house collisions
+                for (let house of this.houses) {
+                    const houseX = house.x * TILE_SIZE;
+                    const houseY = house.y * TILE_SIZE;
+                    const houseWidth = house.width * TILE_SIZE;
+                    const houseHeight = house.height * TILE_SIZE;
+                    
+                    if (x < houseX + houseWidth &&
+                        x + width > houseX &&
+                        y < houseY + houseHeight &&
+                        y + height > houseY) {
+                        return true;
+                    }
+                }
+                
+                return false;
+            }
+            
+            generatePond() {
+                const centerX = 60;
+                const centerY = 20;
+                const radius = 4;
+                
+                for (let dy = -radius; dy <= radius; dy++) {
+                    for (let dx = -radius; dx <= radius; dx++) {
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+                        if (dist < radius + Math.random() * 1.5) {
+                            const x = centerX + dx;
+                            const y = centerY + dy;
+                            if (x >= 0 && x < WORLD_WIDTH && y >= 0 && y < WORLD_HEIGHT) {
+                                this.tiles[y][x] = Tile.WATER;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            draw(camX, camY) {
+                const startX = Math.floor(camX / TILE_SIZE);
+                const startY = Math.floor(camY / TILE_SIZE);
+                const endX = Math.min(WORLD_WIDTH, startX + Math.ceil(game.width / TILE_SIZE) + 1);
+                const endY = Math.min(WORLD_HEIGHT, startY + Math.ceil(game.height / TILE_SIZE) + 1);
+                
+                // Draw base tiles
+                for (let y = Math.max(0, startY); y < endY; y++) {
+                    for (let x = Math.max(0, startX); x < endX; x++) {
+                        const sx = x * TILE_SIZE - camX;
+                        const sy = y * TILE_SIZE - camY;
+                        this.drawTile(sx, sy, this.tiles[y][x], x, y);
+                    }
+                }
+                
+                // Draw decorations (flowers, grass)
+                this.decorations.forEach(dec => {
+                    if (dec.x >= startX && dec.x < endX && dec.y >= startY && dec.y < endY) {
+                        const sx = dec.x * TILE_SIZE - camX;
+                        const sy = dec.y * TILE_SIZE - camY;
+                        this.drawDecoration(sx, sy, dec.type);
+                    }
+                });
+                
+                // Draw rocks
+                this.rocks.forEach(rock => {
+                    if (rock.x >= startX && rock.x < endX && rock.y >= startY && rock.y < endY) {
+                        const sx = rock.x * TILE_SIZE - camX;
+                        const sy = rock.y * TILE_SIZE - camY;
+                        this.drawRock(sx, sy, rock.size);
+                    }
+                });
+                
+                // Draw houses (before trees for proper layering)
+                this.houses.forEach(house => {
+                    if (house.x >= startX && house.x + house.width < endX && 
+                        house.y >= startY && house.y + house.height < endY) {
+                        const sx = house.x * TILE_SIZE - camX;
+                        const sy = house.y * TILE_SIZE - camY;
+                        this.drawHouse(sx, sy, house);
+                    }
+                });
+                
+                // Draw trees (with shadows)
+                this.trees.forEach(tree => {
+                    if (tree.x >= startX && tree.x < endX && tree.y >= startY && tree.y < endY) {
+                        const sx = tree.x * TILE_SIZE - camX;
+                        const sy = tree.y * TILE_SIZE - camY;
+                        this.drawTree(sx, sy, tree.variant);
+                    }
+                });
+                
+                // Draw NPCs
+                this.npcs.forEach(npc => {
+                    // Don't draw if inside house
+                    if (npc.insideHouse) return;
+                    
+                    const npcTileX = Math.floor(npc.x / TILE_SIZE);
+                    const npcTileY = Math.floor(npc.y / TILE_SIZE);
+                    if (npcTileX >= startX && npcTileX < endX && npcTileY >= startY && npcTileY < endY) {
+                        const sx = npc.x - camX;
+                        const sy = npc.y - camY;
+                        this.drawNPC(sx, sy, npc);
+                    }
+                });
+            }
+            
+            drawTile(x, y, type, tx, ty) {
+                if (type === Tile.GRASS) {
+                    // Grass variations
+                    const grassColors = ['#6cb049', '#5ea83c', '#509430'];
+                    const variant = (tx * 7 + ty * 13) % grassColors.length;
+                    ctx.fillStyle = grassColors[variant];
+                    ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+                    
+                    // Grass texture
+                    ctx.fillStyle = 'rgba(80, 150, 50, 0.3)';
+                    if ((tx + ty) % 3 === 0) {
+                        ctx.fillRect(x + 2, y + 2, 2, 2);
+                        ctx.fillRect(x + 10, y + 8, 2, 2);
+                    }
+                    
+                } else if (type === Tile.DIRT_PATH) {
+                    ctx.fillStyle = '#8b6f47';
+                    ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+                    
+                    // Dirt texture
+                    ctx.fillStyle = 'rgba(100, 70, 40, 0.4)';
+                    if ((tx + ty) % 2 === 0) {
+                        ctx.fillRect(x + 3, y + 3, 3, 3);
+                        ctx.fillRect(x + 9, y + 10, 2, 2);
+                    }
+                    
+                    // Edge shadows
+                    ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(x, y, TILE_SIZE, TILE_SIZE);
+                    
+                } else if (type === Tile.WATER) {
+                    // Animated water
+                    const waterAnim = Math.sin(game.time * 0.05 + tx + ty) * 10;
+                    const blue = 180 + waterAnim;
+                    ctx.fillStyle = `rgb(50, 130, ${blue})`;
+                    ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+                    
+                    // Water shimmer
+                    ctx.fillStyle = `rgba(100, 180, 255, ${0.3 + Math.sin(game.time * 0.1 + tx * ty) * 0.2})`;
+                    ctx.fillRect(x + 4, y + 4, 4, 4);
+                    ctx.fillRect(x + 10, y + 2, 2, 2);
+                }
+            }
+            
+            drawDecoration(x, y, type) {
+                if (type === Tile.FLOWER_RED) {
+                    // Red flower
+                    ctx.fillStyle = '#e74c3c';
+                    ctx.fillRect(x + 6, y + 6, 4, 4);
+                    ctx.fillRect(x + 5, y + 7, 2, 2);
+                    ctx.fillRect(x + 9, y + 7, 2, 2);
+                    ctx.fillRect(x + 7, y + 5, 2, 2);
+                    ctx.fillRect(x + 7, y + 9, 2, 2);
+                    
+                    // Center
+                    ctx.fillStyle = '#f39c12';
+                    ctx.fillRect(x + 7, y + 7, 2, 2);
+                    
+                    // Stem
+                    ctx.fillStyle = '#27ae60';
+                    ctx.fillRect(x + 7, y + 10, 2, 4);
+                    
+                } else if (type === Tile.FLOWER_BLUE) {
+                    // Blue flower
+                    ctx.fillStyle = '#3498db';
+                    ctx.fillRect(x + 6, y + 6, 4, 4);
+                    ctx.fillRect(x + 5, y + 7, 2, 2);
+                    ctx.fillRect(x + 9, y + 7, 2, 2);
+                    
+                    ctx.fillStyle = '#fff';
+                    ctx.fillRect(x + 7, y + 7, 2, 2);
+                    
+                    ctx.fillStyle = '#27ae60';
+                    ctx.fillRect(x + 7, y + 10, 2, 4);
+                    
+                } else if (type === Tile.FLOWER_YELLOW) {
+                    // Yellow flower
+                    ctx.fillStyle = '#f1c40f';
+                    ctx.fillRect(x + 6, y + 7, 4, 2);
+                    ctx.fillRect(x + 7, y + 6, 2, 4);
+                    
+                    ctx.fillStyle = '#e67e22';
+                    ctx.fillRect(x + 7, y + 7, 2, 2);
+                    
+                    ctx.fillStyle = '#27ae60';
+                    ctx.fillRect(x + 7, y + 10, 2, 4);
+                    
+                } else if (type === Tile.TALL_GRASS) {
+                    // Tall grass swaying
+                    const sway = Math.sin(game.time * 0.05 + x) * 1;
+                    ctx.fillStyle = '#4a9430';
+                    ctx.fillRect(x + 5 + sway, y + 8, 2, 6);
+                    ctx.fillRect(x + 9 - sway, y + 10, 2, 5);
+                    ctx.fillRect(x + 7, y + 9, 2, 6);
+                }
+            }
+            
+            drawRock(x, y, size) {
+                // Rock shadow
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                ctx.fillRect(x + 2, y + TILE_SIZE - 2, TILE_SIZE - 2, 3);
+                
+                // Rock
+                ctx.fillStyle = '#7f8c8d';
+                if (size === 1) {
+                    ctx.fillRect(x + 4, y + 6, 8, 6);
+                    ctx.fillRect(x + 6, y + 4, 4, 8);
+                } else {
+                    ctx.fillRect(x + 2, y + 4, 12, 8);
+                    ctx.fillRect(x + 4, y + 2, 8, 10);
+                }
+                
+                // Rock highlights
+                ctx.fillStyle = '#95a5a6';
+                ctx.fillRect(x + 5, y + 5, 3, 2);
+                
+                // Rock cracks
+                ctx.strokeStyle = '#5a6566';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(x + 6, y + 7);
+                ctx.lineTo(x + 9, y + 9);
+                ctx.stroke();
+            }
+            
+            drawTree(x, y, variant) {
+                // Tree shadow
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                ctx.fillRect(x - 8, y + TILE_SIZE, 32, 4);
+                
+                // Trunk
+                ctx.fillStyle = '#7f5539';
+                ctx.fillRect(x + 4, y - 8, 8, 20);
+                
+                // Trunk texture
+                ctx.fillStyle = '#6d4c37';
+                ctx.fillRect(x + 5, y - 6, 2, 16);
+                ctx.fillRect(x + 9, y - 4, 2, 14);
+                
+                // Canopy (layered for depth)
+                const canopyColors = [
+                    ['#2d8659', '#3a9b68', '#4aaf77'],  // Green
+                    ['#338855', '#3d9960', '#4aaf6e'],  // Bright green
+                    ['#2f7a52', '#3a8a5f', '#45996b']   // Dark green
+                ][variant];
+                
+                // Back layer
+                ctx.fillStyle = canopyColors[0];
+                ctx.fillRect(x - 6, y - 16, 28, 12);
+                ctx.fillRect(x - 4, y - 20, 24, 8);
+                
+                // Middle layer
+                ctx.fillStyle = canopyColors[1];
+                ctx.fillRect(x - 4, y - 18, 24, 12);
+                ctx.fillRect(x - 2, y - 22, 20, 8);
+                
+                // Front layer (highlights)
+                ctx.fillStyle = canopyColors[2];
+                ctx.fillRect(x, y - 20, 16, 10);
+                ctx.fillRect(x + 2, y - 24, 12, 6);
+                
+                // Canopy highlights
+                ctx.fillStyle = 'rgba(150, 220, 150, 0.4)';
+                ctx.fillRect(x + 4, y - 22, 4, 4);
+                ctx.fillRect(x + 10, y - 18, 3, 3);
+            }
+            
+            drawHouse(x, y, house) {
+                const w = house.width * TILE_SIZE;
+                const h = house.height * TILE_SIZE;
+                
+                // Shadow
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+                ctx.fillRect(x + 4, y + h, w - 4, 6);
+                
+                if (house.type === 'cottage') {
+                    // Cottage - stone walls with red roof
+                    
+                    // Roof (red tiles) - DRAW FIRST
+                    ctx.fillStyle = '#b44236';
+                    ctx.fillRect(x - 8, y + 12, w + 16, 12);
+                    ctx.fillRect(x - 4, y + 4, w + 8, 12);
+                    
+                    // Roof shingles
+                    ctx.fillStyle = '#9d3830';
+                    for (let py = 6; py < 20; py += 4) {
+                        for (let px = 0; px < w + 8; px += 8) {
+                            ctx.fillRect(x - 4 + px, y + py, 6, 3);
+                        }
+                    }
+                    
+                    // Walls (light stone) - DRAW AFTER ROOF
+                    ctx.fillStyle = '#c9b8a8';
+                    ctx.fillRect(x, y + 24, w, h - 24);
+                    
+                    // Wall texture - only on walls, not roof
+                    ctx.fillStyle = '#b5a599';
+                    for (let py = 28; py < h; py += 8) {
+                        for (let px = 4; px < w; px += 8) {
+                            ctx.fillRect(x + px, y + py, 6, 6);
+                        }
+                    }
+                    
+                    // Chimney
+                    ctx.fillStyle = '#8b5a3c';
+                    ctx.fillRect(x + w - 16, y - 8, 12, 28);
+                    
+                    // Chimney bricks
+                    ctx.fillStyle = '#6d4c37';
+                    ctx.fillRect(x + w - 15, y - 6, 4, 3);
+                    ctx.fillRect(x + w - 9, y - 2, 4, 3);
+                    
+                    // Door
+                    ctx.fillStyle = '#6d4c37';
+                    ctx.fillRect(x + w/2 - 8, y + h - 24, 16, 24);
+                    
+                    // Door panels
+                    ctx.strokeStyle = '#5a3d2a';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x + w/2 - 6, y + h - 22, 5, 20);
+                    ctx.strokeRect(x + w/2 + 1, y + h - 22, 5, 20);
+                    
+                    // Door knob
+                    ctx.fillStyle = '#f1c40f';
+                    ctx.fillRect(x + w/2 + 5, y + h - 12, 2, 2);
+                    
+                    // Window
+                    ctx.fillStyle = '#87ceeb';
+                    ctx.fillRect(x + 12, y + 32, 16, 16);
+                    
+                    // Window panes
+                    ctx.strokeStyle = '#5a3d2a';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(x + 20, y + 32);
+                    ctx.lineTo(x + 20, y + 48);
+                    ctx.moveTo(x + 12, y + 40);
+                    ctx.lineTo(x + 28, y + 40);
+                    ctx.stroke();
+                    
+                } else if (house.type === 'farmhouse') {
+                    // Farmhouse - wood walls with green roof
+                    
+                    // Roof (green/teal) - DRAW FIRST
+                    ctx.fillStyle = '#5eb85e';
+                    ctx.fillRect(x - 12, y + 12, w + 24, 16);
+                    ctx.fillRect(x - 6, y + 4, w + 12, 12);
+                    
+                    // Roof highlights
+                    ctx.fillStyle = '#4a9d4a';
+                    ctx.fillRect(x - 10, y + 14, w + 20, 4);
+                    
+                    // Walls (wood planks) - DRAW AFTER ROOF
+                    ctx.fillStyle = '#d4a574';
+                    ctx.fillRect(x, y + 28, w, h - 28);
+                    
+                    // Wood planks - only on walls
+                    ctx.fillStyle = '#c8941f';
+                    for (let py = 32; py < h; py += 6) {
+                        ctx.fillRect(x + 2, y + py, w - 4, 4);
+                    }
+                    
+                    // Door
+                    ctx.fillStyle = '#8b6f47';
+                    ctx.fillRect(x + 16, y + h - 28, 20, 28);
+                    
+                    ctx.strokeStyle = '#6d5838';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x + 18, y + h - 26, 16, 26);
+                    
+                    // Door knob
+                    ctx.fillStyle = '#c0c0c0';
+                    ctx.fillRect(x + 30, y + h - 14, 2, 2);
+                    
+                    // Windows (two)
+                    ctx.fillStyle = '#b8e6ff';
+                    ctx.fillRect(x + 48, y + 40, 14, 14);
+                    ctx.fillRect(x + 68, y + 40, 14, 14);
+                    
+                    // Window frames
+                    ctx.strokeStyle = '#6d5838';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(x + 48, y + 40, 14, 14);
+                    ctx.strokeRect(x + 68, y + 40, 14, 14);
+                    
+                    // Window cross
+                    ctx.beginPath();
+                    ctx.moveTo(x + 55, y + 40);
+                    ctx.lineTo(x + 55, y + 54);
+                    ctx.moveTo(x + 48, y + 47);
+                    ctx.lineTo(x + 62, y + 47);
+                    ctx.stroke();
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(x + 75, y + 40);
+                    ctx.lineTo(x + 75, y + 54);
+                    ctx.moveTo(x + 68, y + 47);
+                    ctx.lineTo(x + 82, y + 47);
+                    ctx.stroke();
+                    
+                } else if (house.type === 'cabin') {
+                    // Small cabin - rustic wood
+                    
+                    // Roof (dark) - DRAW FIRST
+                    ctx.fillStyle = '#5a3d2a';
+                    ctx.fillRect(x - 8, y + 8, w + 16, 12);
+                    ctx.fillRect(x - 4, y, w + 8, 12);
+                    
+                    // Roof edge
+                    ctx.fillStyle = '#4a2f1a';
+                    ctx.fillRect(x - 6, y + 10, w + 12, 3);
+                    
+                    // Walls (dark wood) - DRAW AFTER ROOF
+                    ctx.fillStyle = '#8b6f47';
+                    ctx.fillRect(x, y + 20, w, h - 20);
+                    
+                    // Log texture - only on walls
+                    ctx.fillStyle = '#7a5f3a';
+                    for (let py = 24; py < h; py += 8) {
+                        ctx.fillRect(x + 2, y + py, w - 4, 6);
+                    }
+                    
+                    // Door
+                    ctx.fillStyle = '#6d4c37';
+                    ctx.fillRect(x + w/2 - 8, y + h - 20, 16, 20);
+                    
+                    ctx.strokeStyle = '#5a3d2a';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x + w/2 - 7, y + h - 19, 14, 19);
+                    
+                    // Window
+                    ctx.fillStyle = '#fff5cc';
+                    ctx.fillRect(x + 8, y + 28, 12, 12);
+                    
+                    ctx.strokeStyle = '#5a3d2a';
+                    ctx.strokeRect(x + 8, y + 28, 12, 12);
+                    ctx.beginPath();
+                    ctx.moveTo(x + 14, y + 28);
+                    ctx.lineTo(x + 14, y + 40);
+                    ctx.moveTo(x + 8, y + 34);
+                    ctx.lineTo(x + 20, y + 34);
+                    ctx.stroke();
+                }
+            }
+            
+            drawHouseInterior(house) {
+                // Full screen interior - completely separate from outside
+                const roomWidth = 400;
+                const roomHeight = 300;
+                const startX = (game.width - roomWidth) / 2;
+                const startY = (game.height - roomHeight) / 2;
+                
+                // Black background (outside the room)
+                ctx.fillStyle = '#000';
+                ctx.fillRect(0, 0, game.width, game.height);
+                
+                // Draw wooden floor
+                ctx.fillStyle = '#8b7355';
+                ctx.fillRect(startX, startY, roomWidth, roomHeight);
+                
+                for (let y = 0; y < roomHeight; y += TILE_SIZE) {
+                    for (let x = 0; x < roomWidth; x += TILE_SIZE) {
+                        const px = startX + x;
+                        const py = startY + y;
+                        ctx.fillStyle = (x + y) % 32 === 0 ? '#a0826d' : '#8b7355';
+                        ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+                        ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+                        ctx.strokeRect(px, py, TILE_SIZE, TILE_SIZE);
+                    }
+                }
+                
+                // Draw walls
+                const wallThickness = 50;
+                const wallColor = '#d4a574';
+                const trimColor = '#8b6f47';
+                
+                // Top wall
+                ctx.fillStyle = wallColor;
+                ctx.fillRect(startX - wallThickness, startY - wallThickness, roomWidth + wallThickness * 2, wallThickness);
+                ctx.fillStyle = trimColor;
+                ctx.fillRect(startX - wallThickness, startY - 8, roomWidth + wallThickness * 2, 8);
+                
+                // Left wall
+                ctx.fillStyle = wallColor;
+                ctx.fillRect(startX - wallThickness, startY - wallThickness, wallThickness, roomHeight + wallThickness * 2);
+                ctx.fillStyle = trimColor;
+                ctx.fillRect(startX - 8, startY - wallThickness, 8, roomHeight + wallThickness * 2);
+                
+                // Right wall
+                ctx.fillStyle = wallColor;
+                ctx.fillRect(startX + roomWidth, startY - wallThickness, wallThickness, roomHeight + wallThickness * 2);
+                ctx.fillStyle = trimColor;
+                ctx.fillRect(startX + roomWidth, startY - wallThickness, 8, roomHeight + wallThickness * 2);
+                
+                // Bottom wall
+                ctx.fillStyle = wallColor;
+                ctx.fillRect(startX - wallThickness, startY + roomHeight, roomWidth + wallThickness * 2, wallThickness);
+                ctx.fillStyle = trimColor;
+                ctx.fillRect(startX - wallThickness, startY + roomHeight, roomWidth + wallThickness * 2, 8);
+                
+                // Door on bottom wall
+                const doorCenterX = startX + roomWidth / 2;
+                const doorCenterY = startY + roomHeight;
+                ctx.fillStyle = '#654321';
+                ctx.fillRect(doorCenterX - 20, doorCenterY, 40, wallThickness);
+                ctx.strokeStyle = '#3d2817';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(doorCenterX - 20, doorCenterY, 40, wallThickness);
+                
+                // Door indicator on floor (where player needs to stand to exit)
+                ctx.fillStyle = 'rgba(255, 215, 0, 0.3)';
+                ctx.fillRect(doorCenterX - 30, doorCenterY - 40, 60, 40);
+                ctx.strokeStyle = '#ffd700';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([5, 5]);
+                ctx.strokeRect(doorCenterX - 30, doorCenterY - 40, 60, 40);
+                ctx.setLineDash([]);
+                
+                // "EXIT" text on floor
+                ctx.fillStyle = '#ffd700';
+                ctx.font = 'bold 12px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('EXIT', doorCenterX, doorCenterY - 15);
+                
+                // Store bounds for collision
+                house.interiorBounds = {
+                    left: startX,
+                    right: startX + roomWidth,
+                    top: startY,
+                    bottom: startY + roomHeight
+                };
+                
+                // Draw furniture along walls
+                this.drawInteriorFurniture(house, startX, startY, roomWidth, roomHeight);
+                
+                // Draw NPCs inside this house
+                this.npcs.forEach(npc => {
+                    if (npc.insideHouse && npc.targetHouse === house) {
+                        // NPC position inside house
+                        if (!npc.interiorX) {
+                            npc.interiorX = startX + roomWidth / 2;
+                            npc.interiorY = startY + roomHeight / 2;
+                        }
+                        
+                        // NPC wanders inside
+                        if (Math.random() < 0.02) {
+                            npc.interiorDirection = ['up', 'down', 'left', 'right'][Math.floor(Math.random() * 4)];
+                        }
+                        
+                        const moveSpeed = 0.8;
+                        if (npc.interiorDirection === 'up') npc.interiorY -= moveSpeed;
+                        if (npc.interiorDirection === 'down') npc.interiorY += moveSpeed;
+                        if (npc.interiorDirection === 'left') npc.interiorX -= moveSpeed;
+                        if (npc.interiorDirection === 'right') npc.interiorX += moveSpeed;
+                        
+                        // Keep NPC in bounds
+                        npc.interiorX = Math.max(startX + 20, Math.min(startX + roomWidth - 20, npc.interiorX));
+                        npc.interiorY = Math.max(startY + 20, Math.min(startY + roomHeight - 20, npc.interiorY));
+                        
+                        npc.direction = npc.interiorDirection || 'down';
+                        
+                        // Animation
+                        npc.frameTimer = (npc.frameTimer || 0) + 1;
+                        if (npc.frameTimer > 15) {
+                            npc.frameTimer = 0;
+                            npc.walkFrame = ((npc.walkFrame || 0) + 1) % 4;
+                        }
+                        
+                        // Draw NPC
+                        this.drawNPC(npc.interiorX, npc.interiorY, npc);
+                    }
+                });
+                
+                // Exit door prompt - only show if player is near door
+                const doorX = game.width / 2;
+                const doorY = game.height / 2 + 150;
+                const distToDoor = Math.sqrt(
+                    Math.pow(player.x - doorX, 2) + 
+                    Math.pow(player.y - doorY, 2)
+                );
+                
+                if (distToDoor < 60) {
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+                    ctx.fillRect(game.width / 2 - 100, 20, 200, 35);
+                    ctx.strokeStyle = '#ffd700';
+                    ctx.lineWidth = 3;
+                    ctx.strokeRect(game.width / 2 - 100, 20, 200, 35);
+                    ctx.fillStyle = '#fff';
+                    ctx.font = 'bold 16px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('Press T to exit house', game.width / 2, 45);
+                }
+            }
+            
+            drawInteriorFurniture(house, startX, startY, roomWidth, roomHeight) {
+                const furniture = house.interior.furniture;
+                
+                if (house.type === 'cottage') {
+                    // Emma's cottage - all furniture on walls
+                    // Bed on top left wall
+                    this.drawFurniture(startX + 10, startY + 10, 'bed');
+                    // Bookshelf on top right wall
+                    this.drawFurniture(startX + roomWidth - 70, startY + 10, 'bookshelf');
+                    // Table on left wall
+                    this.drawFurniture(startX + 10, startY + 100, 'table');
+                    // Chair on left wall below table
+                    this.drawFurniture(startX + 10, startY + 150, 'chair');
+                    // Rug on right wall
+                    this.drawFurniture(startX + roomWidth - 70, startY + roomHeight - 80, 'rug');
+                    
+                } else if (house.type === 'farmhouse') {
+                    // Marcus's farmhouse - all along walls
+                    // Bed on top left wall
+                    this.drawFurniture(startX + 10, startY + 10, 'bed');
+                    // Stove on right wall top
+                    this.drawFurniture(startX + roomWidth - 70, startY + 20, 'stove');
+                    // Counter on right wall below stove
+                    this.drawFurniture(startX + roomWidth - 70, startY + 80, 'counter');
+                    // Table on bottom wall left
+                    this.drawFurniture(startX + 20, startY + roomHeight - 70, 'table');
+                    // Chair on bottom wall
+                    this.drawFurniture(startX + 80, startY + roomHeight - 70, 'chair');
+                    // Chair on bottom wall right
+                    this.drawFurniture(startX + 140, startY + roomHeight - 70, 'chair');
+                    
+                } else if (house.type === 'cabin') {
+                    // Sofia's cabin - artist studio along walls
+                    // Bed on left wall top
+                    this.drawFurniture(startX + 10, startY + 10, 'bed');
+                    // Easel on right wall
+                    this.drawFurniture(startX + roomWidth - 80, startY + 30, 'easel');
+                    // Table on left wall bottom
+                    this.drawFurniture(startX + 10, startY + roomHeight - 80, 'table');
+                    // Plant on right wall bottom
+                    this.drawFurniture(startX + roomWidth - 70, startY + roomHeight - 80, 'plant');
+                }
+            }
+            
+            drawFurniture(x, y, type) {
+                const size = 24; // Smaller furniture
+                
+                if (type === 'bed') {
+                    // Bed frame
+                    ctx.fillStyle = '#654321';
+                    ctx.fillRect(x, y, size + 8, size + 16);
+                    // Mattress
+                    ctx.fillStyle = '#dc143c';
+                    ctx.fillRect(x + 2, y + 2, size + 4, size + 12);
+                    // Pillow
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(x + 4, y + 4, size, 8);
+                    
+                } else if (type === 'table') {
+                    // Table top
+                    ctx.fillStyle = '#8b4513';
+                    ctx.fillRect(x, y + 8, size, size);
+                    // Legs
+                    ctx.fillStyle = '#654321';
+                    ctx.fillRect(x + 2, y + 20, 4, 12);
+                    ctx.fillRect(x + size - 6, y + 20, 4, 12);
+                    
+                } else if (type === 'chair') {
+                    // Seat
+                    ctx.fillStyle = '#8b4513';
+                    ctx.fillRect(x + 4, y + 12, 16, 12);
+                    // Back
+                    ctx.fillRect(x + 4, y + 4, 16, 10);
+                    // Legs
+                    ctx.fillStyle = '#654321';
+                    ctx.fillRect(x + 6, y + 20, 4, 8);
+                    ctx.fillRect(x + 14, y + 20, 4, 8);
+                    
+                } else if (type === 'bookshelf') {
+                    // Frame
+                    ctx.fillStyle = '#654321';
+                    ctx.fillRect(x, y, size, size + 16);
+                    // Shelves
+                    ctx.fillStyle = '#8b4513';
+                    for (let i = 0; i < 3; i++) {
+                        ctx.fillRect(x + 2, y + 4 + i * 12, size - 4, 8);
+                        // Books
+                        ctx.fillStyle = ['#ff0000', '#00ff00', '#0000ff'][i];
+                        ctx.fillRect(x + 4, y + 5 + i * 12, 4, 6);
+                        ctx.fillRect(x + 10, y + 5 + i * 12, 3, 6);
+                        ctx.fillRect(x + 15, y + 5 + i * 12, 5, 6);
+                    }
+                    
+                } else if (type === 'rug') {
+                    // Rug
+                    ctx.fillStyle = '#8b0000';
+                    ctx.fillRect(x, y, size + 8, size + 8);
+                    ctx.fillStyle = '#a52a2a';
+                    ctx.fillRect(x + 4, y + 4, size, size);
+                    
+                } else if (type === 'stove') {
+                    // Stove body
+                    ctx.fillStyle = '#2f4f4f';
+                    ctx.fillRect(x, y + 8, size, size);
+                    // Burners
+                    ctx.fillStyle = '#000';
+                    ctx.fillRect(x + 4, y + 10, 8, 8);
+                    ctx.fillRect(x + 14, y + 10, 8, 8);
+                    
+                } else if (type === 'counter') {
+                    // Counter
+                    ctx.fillStyle = '#d2691e';
+                    ctx.fillRect(x, y + 12, size, size);
+                    ctx.fillStyle = '#8b4513';
+                    ctx.fillRect(x, y + 12, size, 6);
+                    
+                } else if (type === 'easel') {
+                    // Canvas
+                    ctx.fillStyle = '#fff';
+                    ctx.fillRect(x + 4, y + 4, 16, 20);
+                    // Frame
+                    ctx.strokeStyle = '#654321';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x + 4, y + 4, 16, 20);
+                    // Painting
+                    ctx.fillStyle = '#87ceeb';
+                    ctx.fillRect(x + 6, y + 6, 12, 8);
+                    ctx.fillStyle = '#228b22';
+                    ctx.fillRect(x + 6, y + 14, 12, 8);
+                    // Legs
+                    ctx.fillStyle = '#654321';
+                    ctx.fillRect(x + 8, y + 24, 2, 8);
+                    ctx.fillRect(x + 14, y + 24, 2, 8);
+                    
+                } else if (type === 'plant') {
+                    // Pot
+                    ctx.fillStyle = '#8b4513';
+                    ctx.fillRect(x + 6, y + 16, 12, 12);
+                    // Plant
+                    ctx.fillStyle = '#228b22';
+                    ctx.fillRect(x + 8, y + 8, 4, 10);
+                    ctx.fillRect(x + 12, y + 6, 4, 12);
+                    ctx.fillRect(x + 16, y + 10, 4, 8);
+                }
+            }
+            
+            drawNPC(x, y, npc) {
+                // Shadow
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                ctx.fillRect(x + 2, y + 12, 12, 3);
+                
+                const walkFrame = npc.walkFrame || 0;
+                const legSwing = Math.floor(Math.sin(walkFrame * Math.PI / 2) * 3);
+                
+                // Simple NPC rendering based on direction with animation
+                if (npc.direction === 'down') {
+                    // Hair
+                    ctx.fillStyle = npc.hairColor;
+                    ctx.fillRect(x + 3, y, 10, 4);
+                    
+                    // Head
+                    ctx.fillStyle = npc.skinColor;
+                    ctx.fillRect(x + 3, y + 3, 10, 6);
+                    
+                    // Eyes
+                    ctx.fillStyle = '#000';
+                    ctx.fillRect(x + 5, y + 5, 1, 1);
+                    ctx.fillRect(x + 10, y + 5, 1, 1);
+                    
+                    // Shirt
+                    ctx.fillStyle = npc.shirtColor;
+                    ctx.fillRect(x + 2, y + 9, 12, 5);
+                    
+                    // Pants/Legs (animated)
+                    ctx.fillStyle = npc.pantsColor;
+                    if (legSwing > 0) {
+                        ctx.fillRect(x + 5, y + 14, 3, 2);
+                        ctx.fillRect(x + 8, y + 14, 3, 1);
+                    } else {
+                        ctx.fillRect(x + 5, y + 14, 3, 1);
+                        ctx.fillRect(x + 8, y + 14, 3, 2);
+                    }
+                    
+                } else if (npc.direction === 'up') {
+                    // Hair (back)
+                    ctx.fillStyle = npc.hairColor;
+                    ctx.fillRect(x + 2, y, 12, 5);
+                    
+                    // Head (visible from back)
+                    ctx.fillStyle = npc.skinColor;
+                    ctx.fillRect(x + 3, y + 3, 10, 4);
+                    
+                    // Ears
+                    ctx.fillStyle = npc.skinColor;
+                    ctx.fillRect(x + 2, y + 4, 1, 2);
+                    ctx.fillRect(x + 13, y + 4, 1, 2);
+                    
+                    // Neck
+                    ctx.fillStyle = npc.skinColor;
+                    ctx.fillRect(x + 6, y + 7, 4, 1);
+                    
+                    // Shirt
+                    ctx.fillStyle = npc.shirtColor;
+                    ctx.fillRect(x + 2, y + 8, 12, 6);
+                    
+                    // Pants/Legs (animated)
+                    ctx.fillStyle = npc.pantsColor;
+                    if (legSwing > 0) {
+                        ctx.fillRect(x + 5, y + 14, 3, 2);
+                        ctx.fillRect(x + 8, y + 14, 3, 1);
+                    } else {
+                        ctx.fillRect(x + 5, y + 14, 3, 1);
+                        ctx.fillRect(x + 8, y + 14, 3, 2);
+                    }
+                    
+                } else if (npc.direction === 'left') {
+                    // Hair (flowing right)
+                    ctx.fillStyle = npc.hairColor;
+                    ctx.fillRect(x + 4, y, 10, 4);
+                    
+                    // Head
+                    ctx.fillStyle = npc.skinColor;
+                    ctx.fillRect(x + 3, y + 3, 10, 6);
+                    
+                    // Eyes
+                    ctx.fillStyle = '#000';
+                    ctx.fillRect(x + 5, y + 5, 1, 1);
+                    ctx.fillRect(x + 9, y + 5, 1, 1);
+                    
+                    // Shirt
+                    ctx.fillStyle = npc.shirtColor;
+                    ctx.fillRect(x + 2, y + 9, 12, 5);
+                    
+                    // Pants/Legs (animated)
+                    ctx.fillStyle = npc.pantsColor;
+                    if (legSwing > 0) {
+                        ctx.fillRect(x + 5, y + 14, 3, 2);
+                        ctx.fillRect(x + 8, y + 14, 3, 1);
+                    } else {
+                        ctx.fillRect(x + 5, y + 14, 3, 1);
+                        ctx.fillRect(x + 8, y + 14, 3, 2);
+                    }
+                    
+                } else if (npc.direction === 'right') {
+                    // Hair (flowing left)
+                    ctx.fillStyle = npc.hairColor;
+                    ctx.fillRect(x + 2, y, 10, 4);
+                    
+                    // Head
+                    ctx.fillStyle = npc.skinColor;
+                    ctx.fillRect(x + 3, y + 3, 10, 6);
+                    
+                    // Eyes
+                    ctx.fillStyle = '#000';
+                    ctx.fillRect(x + 6, y + 5, 1, 1);
+                    ctx.fillRect(x + 10, y + 5, 1, 1);
+                    
+                    // Shirt
+                    ctx.fillStyle = npc.shirtColor;
+                    ctx.fillRect(x + 2, y + 9, 12, 5);
+                    
+                    // Pants/Legs (animated)
+                    ctx.fillStyle = npc.pantsColor;
+                    if (legSwing > 0) {
+                        ctx.fillRect(x + 8, y + 14, 3, 2);
+                        ctx.fillRect(x + 5, y + 14, 3, 1);
+                    } else {
+                        ctx.fillRect(x + 8, y + 14, 3, 1);
+                        ctx.fillRect(x + 5, y + 14, 3, 2);
+                    }
+                }
+            }
+        }
+        
+        const world = new GrassyPlainsWorld();
+        
+        // ============================================================================
+        // DIALOGUE SYSTEM
+        // ============================================================================
+        
+        function drawDialoguePrompt() {
+            if (dialogue.nearbyNPC && !dialogue.active) {
+                const npc = dialogue.nearbyNPC;
+                const sx = npc.x - game.camera.x;
+                const sy = npc.y - game.camera.y - 30;
+                
+                // Prompt background
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+                ctx.fillRect(sx - 40, sy - 15, 110, 25);
+                
+                // Prompt border
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(sx - 40, sy - 15, 110, 25);
+                
+                // Prompt text
+                ctx.fillStyle = '#fff';
+                ctx.font = '12px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(`Press E to talk to ${npc.name}`, sx + 15, sy + 2);
+            }
+        }
+        
+        function drawDoorPrompt() {
+            if (houseSystem.nearbyDoor && !houseSystem.insideHouse && !dialogue.active) {
+                const house = houseSystem.nearbyDoor;
+                const doorX = house.doorX * TILE_SIZE - game.camera.x;
+                const doorY = house.doorY * TILE_SIZE - game.camera.y - 30;
+                
+                // Prompt background
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+                ctx.fillRect(doorX - 60, doorY - 15, 120, 25);
+                
+                // Prompt border
+                ctx.strokeStyle = '#ffd700';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(doorX - 60, doorY - 15, 120, 25);
+                
+                // Prompt text
+                ctx.fillStyle = '#fff';
+                ctx.font = '12px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(`Press T to enter house`, doorX, doorY + 2);
+            }
+        }
+        
+        function drawDialogueBox() {
+            if (!dialogue.active || !dialogue.npc) return;
+            
+            const boxWidth = 600;
+            const boxHeight = 200;
+            const boxX = (game.width - boxWidth) / 2;
+            const boxY = game.height - boxHeight - 20;
+            
+            // Dialogue box background
+            ctx.fillStyle = 'rgba(40, 40, 60, 0.95)';
+            ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+            
+            // Border
+            ctx.strokeStyle = '#8ab4f8';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(boxX, boxY, boxWidth, boxHeight);
+            
+            // NPC name
+            ctx.fillStyle = '#ffd700';
+            ctx.font = 'bold 18px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText(dialogue.npc.name, boxX + 20, boxY + 30);
+            
+            // Dialogue text
+            ctx.fillStyle = '#fff';
+            ctx.font = '16px Arial';
+            const text = dialogue.currentNode.text;
+            const words = text.split(' ');
+            let line = '';
+            let y = boxY + 60;
+            const maxWidth = boxWidth - 40;
+            
+            for (let word of words) {
+                const testLine = line + word + ' ';
+                const metrics = ctx.measureText(testLine);
+                
+                if (metrics.width > maxWidth && line !== '') {
+                    ctx.fillText(line, boxX + 20, y);
+                    line = word + ' ';
+                    y += 22;
+                } else {
+                    line = testLine;
+                }
+            }
+            ctx.fillText(line, boxX + 20, y);
+            
+            // Options
+            if (dialogue.currentNode.options.length > 0) {
+                y += 40;
+                dialogue.currentNode.options.forEach((option, index) => {
+                    // Option background
+                    ctx.fillStyle = 'rgba(100, 120, 200, 0.3)';
+                    ctx.fillRect(boxX + 20, y - 18, boxWidth - 40, 30);
+                    
+                    // Option border
+                    ctx.strokeStyle = '#8ab4f8';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(boxX + 20, y - 18, boxWidth - 40, 30);
+                    
+                    // Option number
+                    ctx.fillStyle = '#ffd700';
+                    ctx.font = 'bold 16px Arial';
+                    ctx.fillText(`${index + 1}.`, boxX + 30, y);
+                    
+                    // Option text
+                    ctx.fillStyle = '#fff';
+                    ctx.font = '16px Arial';
+                    ctx.fillText(option.text, boxX + 55, y);
+                    
+                    y += 35;
+                });
+            } else {
+                // End of conversation message
+                y += 30;
+                ctx.fillStyle = '#aaa';
+                ctx.font = 'italic 14px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('Press ESC to close', boxX + boxWidth / 2, y);
+            }
+        }
+        
+        function startDialogue(npc) {
+            dialogue.active = true;
+            dialogue.npc = npc;
+            dialogue.currentNode = npc.dialogueTree.greeting;
+        }
+        
+        function selectDialogueOption(optionIndex) {
+            if (!dialogue.active || !dialogue.currentNode) return;
+            
+            const options = dialogue.currentNode.options;
+            if (optionIndex < 0 || optionIndex >= options.length) return;
+            
+            const selectedOption = options[optionIndex];
+            const nextNode = dialogue.npc.dialogueTree[selectedOption.next];
+            
+            if (nextNode) {
+                dialogue.currentNode = nextNode;
+                
+                // Auto-close if no more options
+                if (nextNode.options.length === 0) {
+                    setTimeout(() => {
+                        closeDialogue();
+                    }, 2000);
+                }
+            } else {
+                closeDialogue();
+            }
+        }
+        
+        function closeDialogue() {
+            dialogue.active = false;
+            dialogue.npc = null;
+            dialogue.currentNode = null;
+        }
+        
+        // ============================================================================
+        // STARDEW PLAYER CHARACTER (TOP-DOWN)
+        // ============================================================================
+        
+        const player = {
+            x: 400,
+            y: 300,
+            width: 16,
+            height: 16,
+            speed: 2,
+            direction: 'down', // up, down, left, right
+            
+            // Animation
+            walkFrame: 0,
+            walkTimer: 0,
+            isWalking: false,
+            
+            update() {
+                this.isWalking = false;
+                let dx = 0;
+                let dy = 0;
+                
+                if (keys.up) {
+                    dy = -this.speed;
+                    this.direction = 'up';
+                    this.isWalking = true;
+                }
+                if (keys.down) {
+                    dy = this.speed;
+                    this.direction = 'down';
+                    this.isWalking = true;
+                }
+                if (keys.left) {
+                    dx = -this.speed;
+                    this.direction = 'left';
+                    this.isWalking = true;
+                }
+                if (keys.right) {
+                    dx = this.speed;
+                    this.direction = 'right';
+                    this.isWalking = true;
+                }
+                
+                // Diagonal movement normalization
+                if (dx !== 0 && dy !== 0) {
+                    dx *= 0.707;
+                    dy *= 0.707;
+                }
+                
+                // Store old position
+                const oldX = this.x;
+                const oldY = this.y;
+                
+                // Apply movement
+                this.x += dx;
+                this.y += dy;
+                
+                // === INSIDE HOUSE === 
+                if (houseSystem.insideHouse) {
+                    // Simple: just keep within screen bounds, no complex collision
+                    const margin = 50;
+                    this.x = Math.max(margin, Math.min(game.width - margin - this.width, this.x));
+                    this.y = Math.max(margin, Math.min(game.height - margin - this.height, this.y));
+                }
+                // === OUTSIDE WORLD ===
+                else {
+                    // Check collision with trees and houses
+                    if (world.checkCollision(this.x, this.y, this.width, this.height)) {
+                        this.x = oldX;
+                        this.y = oldY;
+                        
+                        // Try just horizontal
+                        this.x = oldX + dx;
+                        if (world.checkCollision(this.x, this.y, this.width, this.height)) {
+                            this.x = oldX;
+                        }
+                        
+                        // Try just vertical
+                        this.y = oldY + dy;
+                        if (world.checkCollision(this.x, this.y, this.width, this.height)) {
+                            this.y = oldY;
+                        }
+                    }
+                    
+                    // World boundaries
+                    this.x = Math.max(0, Math.min(WORLD_WIDTH * TILE_SIZE - this.width, this.x));
+                    this.y = Math.max(0, Math.min(WORLD_HEIGHT * TILE_SIZE - this.height, this.y));
+                    
+                    // Camera follows player (only outside)
+                    game.camera.x = this.x - game.width / 2 + this.width / 2;
+                    game.camera.y = this.y - game.height / 2 + this.height / 2;
+                    
+                    game.camera.x = Math.max(0, Math.min(WORLD_WIDTH * TILE_SIZE - game.width, game.camera.x));
+                    game.camera.y = Math.max(0, Math.min(WORLD_HEIGHT * TILE_SIZE - game.height, game.camera.y));
+                    
+                    // Check for nearby NPCs
+                    this.checkNearbyNPC();
+                    
+                    // Check for nearby doors
+                    this.checkNearbyDoor();
+                }
+                
+                // Walking animation
+                if (this.isWalking) {
+                    this.walkTimer++;
+                    if (this.walkTimer > 8) {
+                        this.walkTimer = 0;
+                        this.walkFrame = (this.walkFrame + 1) % 4;
+                    }
+                } else {
+                    this.walkFrame = 0;
+                    this.walkTimer = 0;
+                }
+                
+                // Update HUD
+                document.getElementById('posX').textContent = Math.floor(this.x / TILE_SIZE);
+                document.getElementById('posY').textContent = Math.floor(this.y / TILE_SIZE);
+            },
+            
+            checkNearbyDoor() {
+                houseSystem.nearbyDoor = null;
+                
+                if (dialogue.active || houseSystem.insideHouse) return;
+                
+                for (let house of world.houses) {
+                    const doorX = house.doorX * TILE_SIZE;
+                    const doorY = house.doorY * TILE_SIZE;
+                    const dist = Math.sqrt(
+                        Math.pow(this.x - doorX, 2) + 
+                        Math.pow(this.y - doorY, 2)
+                    );
+                    
+                    if (dist < 30) {
+                        houseSystem.nearbyDoor = house;
+                        break;
+                    }
+                }
+            },
+            
+            checkNearbyNPC() {
+                dialogue.nearbyNPC = null;
+                
+                // Don't check if dialogue is active
+                if (dialogue.active) return;
+                
+                // Check distance to each NPC
+                for (let npc of world.npcs) {
+                    // Only interact if both in same location (both inside same house OR both outside)
+                    if (houseSystem.insideHouse) {
+                        // Player is inside - only interact with NPCs in the SAME house
+                        if (!npc.insideHouse || npc.targetHouse !== houseSystem.currentHouse) {
+                            continue; // Skip this NPC
+                        }
+                    } else {
+                        // Player is outside - only interact with NPCs who are also outside
+                        if (npc.insideHouse) {
+                            continue; // Skip this NPC
+                        }
+                    }
+                    
+                    const dist = Math.sqrt(
+                        Math.pow(this.x - npc.x, 2) + 
+                        Math.pow(this.y - npc.y, 2)
+                    );
+                    
+                    if (dist < 40) { // Within 40 pixels
+                        dialogue.nearbyNPC = npc;
+                        break;
+                    }
+                }
+            },
+            
+            draw() {
+                const sx = this.x - game.camera.x;
+                const sy = this.y - game.camera.y;
+                
+                // Shadow
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                ctx.fillRect(sx + 2, sy + 12, 12, 3);
+                
+                ctx.save();
+                ctx.translate(sx, sy);
+                
+                this.drawStardewCharacter();
+                
+                ctx.restore();
+            },
+            
+            drawStardewCharacter() {
+                const legSwing = this.isWalking ? Math.sin(this.walkFrame * Math.PI / 2) * 2 : 0;
+                
+                if (this.direction === 'down') {
+                    // FACING DOWN
+                    
+                    // Hair (darker brown with highlights)
+                    ctx.fillStyle = '#4a2f1a';
+                    ctx.fillRect(3, 0, 10, 2);
+                    ctx.fillRect(2, 2, 12, 3);
+                    ctx.fillRect(1, 4, 2, 3);
+                    ctx.fillRect(13, 4, 2, 3);
+                    
+                    // Hair highlights
+                    ctx.fillStyle = '#6b4423';
+                    ctx.fillRect(4, 1, 2, 1);
+                    ctx.fillRect(10, 1, 2, 1);
+                    
+                    // Head/Face
+                    ctx.fillStyle = '#f4c6a0';
+                    ctx.fillRect(3, 3, 10, 6);
+                    
+                    // Face outline
+                    ctx.strokeStyle = '#d4a574';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(3, 3, 10, 6);
+                    
+                    // Eyes (Stardew style - bigger and expressive)
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(5, 5, 2, 2);
+                    ctx.fillRect(9, 5, 2, 2);
+                    
+                    // Pupils
+                    ctx.fillStyle = '#2c3e50';
+                    ctx.fillRect(6, 6, 1, 1);
+                    ctx.fillRect(10, 6, 1, 1);
+                    
+                    // Eye shine
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(5, 5, 1, 1);
+                    ctx.fillRect(9, 5, 1, 1);
+                    
+                    // Mouth (small smile)
+                    ctx.fillStyle = '#c97a5f';
+                    ctx.fillRect(6, 8, 4, 1);
+                    
+                    // Neck
+                    ctx.fillStyle = '#f4c6a0';
+                    ctx.fillRect(6, 9, 4, 1);
+                    
+                    // Body - Green shirt (Stardew villager style)
+                    ctx.fillStyle = '#5eb85e';
+                    ctx.fillRect(2, 10, 12, 5);
+                    
+                    // Shirt collar/detail
+                    ctx.fillStyle = '#4a9d4a';
+                    ctx.fillRect(6, 10, 4, 1);
+                    
+                    // Shirt outline
+                    ctx.strokeStyle = '#3d7a3d';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(2, 10, 12, 5);
+                    
+                    // Arms (skin tone)
+                    ctx.fillStyle = '#f4c6a0';
+                    ctx.fillRect(0, 11, 2, 4);
+                    ctx.fillRect(14, 11, 2, 4);
+                    
+                    // Hands
+                    ctx.fillStyle = '#e6b380';
+                    ctx.fillRect(0, 14, 2, 1);
+                    ctx.fillRect(14, 14, 2, 1);
+                    
+                    // Pants (dark blue)
+                    ctx.fillStyle = '#4169b8';
+                    ctx.fillRect(4, 15, 3, 1);
+                    ctx.fillRect(9, 15, 3, 1);
+                    
+                    // Legs (animated)
+                    if (this.isWalking) {
+                        ctx.fillRect(4, 15, 3, Math.max(1, 1 + legSwing));
+                        ctx.fillRect(9, 15, 3, Math.max(1, 1 - legSwing));
+                    }
+                    
+                    // Shoes (brown)
+                    ctx.fillStyle = '#5c3a21';
+                    ctx.fillRect(4, 15, 3, 1);
+                    ctx.fillRect(9, 15, 3, 1);
+                    
+                } else if (this.direction === 'up') {
+                    // FACING UP (back view)
+                    
+                    // Hair (back of head)
+                    ctx.fillStyle = '#4a2f1a';
+                    ctx.fillRect(3, 0, 10, 2);
+                    ctx.fillRect(2, 2, 12, 5);
+                    ctx.fillRect(1, 5, 2, 2);
+                    ctx.fillRect(13, 5, 2, 2);
+                    
+                    // Hair highlights
+                    ctx.fillStyle = '#6b4423';
+                    ctx.fillRect(5, 2, 2, 2);
+                    ctx.fillRect(9, 2, 2, 2);
+                    
+                    // Ears
+                    ctx.fillStyle = '#f4c6a0';
+                    ctx.fillRect(2, 5, 1, 2);
+                    ctx.fillRect(13, 5, 1, 2);
+                    
+                    // Neck
+                    ctx.fillStyle = '#f4c6a0';
+                    ctx.fillRect(6, 7, 4, 2);
+                    
+                    // Body - Green shirt
+                    ctx.fillStyle = '#5eb85e';
+                    ctx.fillRect(2, 9, 12, 6);
+                    
+                    // Shirt back detail
+                    ctx.fillStyle = '#4a9d4a';
+                    ctx.fillRect(2, 9, 12, 1);
+                    
+                    ctx.strokeStyle = '#3d7a3d';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(2, 9, 12, 6);
+                    
+                    // Arms
+                    ctx.fillStyle = '#f4c6a0';
+                    ctx.fillRect(0, 10, 2, 5);
+                    ctx.fillRect(14, 10, 2, 5);
+                    
+                    // Pants
+                    ctx.fillStyle = '#4169b8';
+                    ctx.fillRect(4, 15, 3, 1);
+                    ctx.fillRect(9, 15, 3, 1);
+                    
+                    if (this.isWalking) {
+                        ctx.fillRect(4, 15, 3, Math.max(1, 1 + legSwing));
+                        ctx.fillRect(9, 15, 3, Math.max(1, 1 - legSwing));
+                    }
+                    
+                    // Shoes
+                    ctx.fillStyle = '#5c3a21';
+                    ctx.fillRect(4, 15, 3, 1);
+                    ctx.fillRect(9, 15, 3, 1);
+                    
+                } else if (this.direction === 'left') {
+                    // FACING LEFT - hair flows to the RIGHT
+                    
+                    // Hair (flowing to the right side)
+                    ctx.fillStyle = '#4a2f1a';
+                    ctx.fillRect(4, 0, 10, 2);
+                    ctx.fillRect(4, 2, 11, 4);
+                    ctx.fillRect(4, 5, 2, 3);
+                    ctx.fillRect(13, 5, 2, 3);
+                    
+                    // Hair highlights
+                    ctx.fillStyle = '#6b4423';
+                    ctx.fillRect(6, 1, 2, 1);
+                    ctx.fillRect(11, 1, 2, 1);
+                    
+                    // Head/Face
+                    ctx.fillStyle = '#f4c6a0';
+                    ctx.fillRect(3, 3, 10, 6);
+                    
+                    // Face outline
+                    ctx.strokeStyle = '#d4a574';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(3, 3, 10, 6);
+                    
+                    // BOTH EYES visible (3/4 view)
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(5, 5, 2, 2);  // Left eye
+                    ctx.fillRect(9, 5, 2, 2);  // Right eye
+                    
+                    // Pupils
+                    ctx.fillStyle = '#2c3e50';
+                    ctx.fillRect(6, 6, 1, 1);
+                    ctx.fillRect(10, 6, 1, 1);
+                    
+                    // Eye shine
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(5, 5, 1, 1);
+                    ctx.fillRect(9, 5, 1, 1);
+                    
+                    // Nose (small)
+                    ctx.fillStyle = '#d4a574';
+                    ctx.fillRect(6, 7, 1, 1);
+                    
+                    // Mouth (small smile)
+                    ctx.fillStyle = '#c97a5f';
+                    ctx.fillRect(6, 8, 3, 1);
+                    
+                    // Neck
+                    ctx.fillStyle = '#f4c6a0';
+                    ctx.fillRect(6, 9, 4, 1);
+                    
+                    // Body - Green shirt
+                    ctx.fillStyle = '#5eb85e';
+                    ctx.fillRect(2, 10, 12, 5);
+                    
+                    ctx.fillStyle = '#4a9d4a';
+                    ctx.fillRect(5, 10, 6, 1);
+                    
+                    ctx.strokeStyle = '#3d7a3d';
+                    ctx.strokeRect(2, 10, 12, 5);
+                    
+                    // Arms - BOTH SWING
+                    ctx.fillStyle = '#f4c6a0';
+                    if (this.isWalking) {
+                        const armMove = Math.floor(Math.abs(Math.sin(this.walkFrame * Math.PI / 2)) * 1);
+                        // Back arm swings opposite
+                        ctx.fillRect(0, 11 - armMove, 2, 4);
+                        // Front arm swings forward
+                        ctx.fillRect(14, 11 + armMove, 2, 4);
+                    } else {
+                        ctx.fillRect(0, 11, 2, 4);
+                        ctx.fillRect(14, 11, 2, 4);
+                    }
+                    
+                    // Hands
+                    ctx.fillStyle = '#e6b380';
+                    if (this.isWalking) {
+                        const armMove = Math.floor(Math.abs(Math.sin(this.walkFrame * Math.PI / 2)) * 1);
+                        ctx.fillRect(0, 14 - armMove, 2, 1);
+                        ctx.fillRect(14, 14 + armMove, 2, 1);
+                    } else {
+                        ctx.fillRect(0, 14, 2, 1);
+                        ctx.fillRect(14, 14, 2, 1);
+                    }
+                    
+                    // Legs
+                    ctx.fillStyle = '#4169b8';
+                    if (this.isWalking) {
+                        const step = Math.floor(Math.sin(this.walkFrame * Math.PI / 2) * 3);
+                        if (step > 0) {
+                            ctx.fillRect(5, 15, 3, 2);
+                            ctx.fillRect(8, 15, 3, 1);
+                        } else {
+                            ctx.fillRect(5, 15, 3, 1);
+                            ctx.fillRect(8, 15, 3, 2);
+                        }
+                    } else {
+                        ctx.fillRect(5, 15, 6, 1);
+                    }
+                    
+                    // Shoes
+                    ctx.fillStyle = '#5c3a21';
+                    if (this.isWalking) {
+                        const step = Math.floor(Math.sin(this.walkFrame * Math.PI / 2) * 3);
+                        if (step > 0) {
+                            ctx.fillRect(4, 16, 4, 1);
+                            ctx.fillRect(8, 15, 3, 1);
+                        } else {
+                            ctx.fillRect(5, 15, 3, 1);
+                            ctx.fillRect(7, 16, 4, 1);
+                        }
+                    } else {
+                        ctx.fillRect(5, 15, 3, 1);
+                        ctx.fillRect(8, 15, 3, 1);
+                    }
+                    
+                } else if (this.direction === 'right') {
+                    // FACING RIGHT - hair flows to the LEFT
+                    
+                    // Hair (flowing to the left side)
+                    ctx.fillStyle = '#4a2f1a';
+                    ctx.fillRect(2, 0, 10, 2);
+                    ctx.fillRect(1, 2, 11, 4);
+                    ctx.fillRect(1, 5, 2, 3);
+                    ctx.fillRect(10, 5, 2, 3);
+                    
+                    // Hair highlights
+                    ctx.fillStyle = '#6b4423';
+                    ctx.fillRect(3, 1, 2, 1);
+                    ctx.fillRect(8, 1, 2, 1);
+                    
+                    // Head/Face
+                    ctx.fillStyle = '#f4c6a0';
+                    ctx.fillRect(3, 3, 10, 6);
+                    
+                    // Face outline
+                    ctx.strokeStyle = '#d4a574';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(3, 3, 10, 6);
+                    
+                    // BOTH EYES visible (3/4 view)
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(5, 5, 2, 2);  // Left eye
+                    ctx.fillRect(9, 5, 2, 2);  // Right eye
+                    
+                    // Pupils
+                    ctx.fillStyle = '#2c3e50';
+                    ctx.fillRect(6, 6, 1, 1);
+                    ctx.fillRect(10, 6, 1, 1);
+                    
+                    // Eye shine
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(5, 5, 1, 1);
+                    ctx.fillRect(9, 5, 1, 1);
+                    
+                    // Nose (small)
+                    ctx.fillStyle = '#d4a574';
+                    ctx.fillRect(9, 7, 1, 1);
+                    
+                    // Mouth (small smile)
+                    ctx.fillStyle = '#c97a5f';
+                    ctx.fillRect(7, 8, 3, 1);
+                    
+                    // Neck
+                    ctx.fillStyle = '#f4c6a0';
+                    ctx.fillRect(6, 9, 4, 1);
+                    
+                    // Body - Green shirt
+                    ctx.fillStyle = '#5eb85e';
+                    ctx.fillRect(2, 10, 12, 5);
+                    
+                    ctx.fillStyle = '#4a9d4a';
+                    ctx.fillRect(5, 10, 6, 1);
+                    
+                    ctx.strokeStyle = '#3d7a3d';
+                    ctx.strokeRect(2, 10, 12, 5);
+                    
+                    // Arms - BOTH SWING
+                    ctx.fillStyle = '#f4c6a0';
+                    if (this.isWalking) {
+                        const armMove = Math.floor(Math.abs(Math.sin(this.walkFrame * Math.PI / 2)) * 1);
+                        // Front arm swings forward
+                        ctx.fillRect(0, 11 + armMove, 2, 4);
+                        // Back arm swings opposite
+                        ctx.fillRect(14, 11 - armMove, 2, 4);
+                    } else {
+                        ctx.fillRect(0, 11, 2, 4);
+                        ctx.fillRect(14, 11, 2, 4);
+                    }
+                    
+                    // Hands
+                    ctx.fillStyle = '#e6b380';
+                    if (this.isWalking) {
+                        const armMove = Math.floor(Math.abs(Math.sin(this.walkFrame * Math.PI / 2)) * 1);
+                        ctx.fillRect(0, 14 + armMove, 2, 1);
+                        ctx.fillRect(14, 14 - armMove, 2, 1);
+                    } else {
+                        ctx.fillRect(0, 14, 2, 1);
+                        ctx.fillRect(14, 14, 2, 1);
+                    }
+                    
+                    // Legs
+                    ctx.fillStyle = '#4169b8';
+                    if (this.isWalking) {
+                        const step = Math.floor(Math.sin(this.walkFrame * Math.PI / 2) * 3);
+                        if (step > 0) {
+                            ctx.fillRect(8, 15, 3, 2);
+                            ctx.fillRect(5, 15, 3, 1);
+                        } else {
+                            ctx.fillRect(8, 15, 3, 1);
+                            ctx.fillRect(5, 15, 3, 2);
+                        }
+                    } else {
+                        ctx.fillRect(5, 15, 6, 1);
+                    }
+                    
+                    // Shoes
+                    ctx.fillStyle = '#5c3a21';
+                    if (this.isWalking) {
+                        const step = Math.floor(Math.sin(this.walkFrame * Math.PI / 2) * 3);
+                        if (step > 0) {
+                            ctx.fillRect(7, 16, 4, 1);
+                            ctx.fillRect(5, 15, 3, 1);
+                        } else {
+                            ctx.fillRect(8, 15, 3, 1);
+                            ctx.fillRect(4, 16, 4, 1);
+                        }
+                    } else {
+                        ctx.fillRect(5, 15, 3, 1);
+                        ctx.fillRect(8, 15, 3, 1);
+                    }
+                }
+            }
+        };
+        
+        // Spawn in center
+        player.x = 30 * TILE_SIZE;
+        player.y = 25 * TILE_SIZE;
+        
+        // ============================================================================
+        // BACKGROUND
+        // ============================================================================
+        
+        function drawBackground() {
+            // Sky
+            const skyGradient = ctx.createLinearGradient(0, 0, 0, game.height * 0.6);
+            skyGradient.addColorStop(0, '#87ceeb');
+            skyGradient.addColorStop(1, '#b8e6ff');
+            ctx.fillStyle = skyGradient;
+            ctx.fillRect(0, 0, game.width, game.height);
+            
+            // Sun
+            ctx.fillStyle = '#ffe84d';
+            ctx.shadowColor = '#ffeb3b';
+            ctx.shadowBlur = 20;
+            ctx.beginPath();
+            ctx.arc(game.width - 100, 80, 30, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            
+            // Clouds (parallax)
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            const cloudOffset = (game.camera.x * 0.15) % 400;
+            for (let i = 0; i < 6; i++) {
+                const cx = i * 250 - cloudOffset;
+                const cy = 40 + (i % 3) * 30;
+                
+                // Fluffy pixel cloud
+                ctx.fillRect(cx, cy + 4, 40, 8);
+                ctx.fillRect(cx + 8, cy, 24, 16);
+                ctx.fillRect(cx + 12, cy - 4, 16, 8);
+            }
+        }
+        
+        // ============================================================================
+        // INPUT
+        // ============================================================================
+        
+        document.addEventListener('keydown', (e) => {
+            const key = e.key.toLowerCase();
+            
+            // House controls - changed to T key
+            if (key === 't' && houseSystem.nearbyDoor && !houseSystem.insideHouse && !dialogue.active) {
+                houseSystem.insideHouse = true;
+                houseSystem.currentHouse = houseSystem.nearbyDoor;
+                // Position player in center of interior room
+                player.x = game.width / 2;
+                player.y = game.height / 2 + 80;
+                e.preventDefault();
+                return;
+            }
+            
+            if (key === 't' && houseSystem.insideHouse) {
+                // Only allow exit if player is near the door (bottom center of room)
+                const doorX = game.width / 2;
+                const doorY = game.height / 2 + 150; // Bottom of room
+                const dist = Math.sqrt(
+                    Math.pow(player.x - doorX, 2) + 
+                    Math.pow(player.y - doorY, 2)
+                );
+                
+                if (dist < 60) { // Within 60 pixels of door
+                    houseSystem.insideHouse = false;
+                    
+                    // Exit player near the door outside
+                    const house = houseSystem.currentHouse;
+                    player.x = house.doorX * TILE_SIZE - 10;
+                    player.y = house.doorY * TILE_SIZE + 20;
+                    
+                    houseSystem.currentHouse = null;
+                    e.preventDefault();
+                }
+                return;
+            }
+            
+            // Dialogue controls (E key)
+            if (key === 'e' && dialogue.nearbyNPC && !dialogue.active && !houseSystem.insideHouse) {
+                startDialogue(dialogue.nearbyNPC);
+                e.preventDefault();
+                return;
+            }
+            
+            if (key === 'escape' && dialogue.active) {
+                closeDialogue();
+                e.preventDefault();
+                return;
+            }
+            
+            // Number keys for dialogue options
+            if (dialogue.active && dialogue.currentNode) {
+                const num = parseInt(key);
+                if (!isNaN(num) && num >= 1 && num <= 9) {
+                    selectDialogueOption(num - 1);
+                    e.preventDefault();
+                    return;
+                }
+            }
+            
+            // Movement controls - ALWAYS ALLOW (except during dialogue)
+            if (!dialogue.active) {
+                if (key === 'w' || key === 'arrowup') { keys.up = true; e.preventDefault(); }
+                if (key === 's' || key === 'arrowdown') { keys.down = true; e.preventDefault(); }
+                if (key === 'a' || key === 'arrowleft') { keys.left = true; e.preventDefault(); }
+                if (key === 'd' || key === 'arrowright') { keys.right = true; e.preventDefault(); }
+            }
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            const key = e.key.toLowerCase();
+            if (key === 'w' || key === 'arrowup') keys.up = false;
+            if (key === 's' || key === 'arrowdown') keys.down = false;
+            if (key === 'a' || key === 'arrowleft') keys.left = false;
+            if (key === 'd' || key === 'arrowright') keys.right = false;
+        });
+        
+        // ============================================================================
+        // GAME LOOP
+        // ============================================================================
+        
+        function gameLoop() {
+            game.time++;
+            
+            // Update player always (unless in dialogue)
+            if (!dialogue.active) {
+                player.update();
+            }
+            
+            // Update NPCs only when outside
+            if (!dialogue.active && !houseSystem.insideHouse) {
+                world.updateNPCs();
+            }
+            
+            // Draw outside or inside
+            if (houseSystem.insideHouse && houseSystem.currentHouse) {
+                world.drawHouseInterior(houseSystem.currentHouse);
+                player.draw();
+            } else {
+                drawBackground();
+                world.draw(game.camera.x, game.camera.y);
+                player.draw();
+                
+                // Draw UI elements
+                drawDoorPrompt();
+                drawDialoguePrompt();
+                drawDialogueBox();
+            }
+            
+            requestAnimationFrame(gameLoop);
+        }
+        
+        gameLoop();
+        console.log('🌻 Stardew Valley style world ready!');
+    </script>
+</body>
+</html>
